@@ -1,0 +1,167 @@
+From 4794cb71e13f21b6624e9656d591b3e5b1947ce7 Mon Sep 17 00:00:00 2001
+From: Jan Nidzwetzki <knidzwetzki@gmx.de>
+Date: Wed, 10 Dec 2014 13:08:30 +0100
+Subject: [PATCH] Added single node loadbalancing
+
+---
+ include/cassandra.h        | 12 ++++++
+ src/cluster.cpp            |  8 ++++
+ src/single_node_policy.hpp | 97 ++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 117 insertions(+)
+ create mode 100644 src/single_node_policy.hpp
+
+diff --git a/include/cassandra.h b/include/cassandra.h
+index 78e6855..13c008d 100644
+--- a/include/cassandra.h
++++ b/include/cassandra.h
+@@ -699,6 +699,18 @@ cass_cluster_set_load_balance_dc_aware(CassCluster* cluster,
+                                        const char* local_dc);
+ 
+ /**
++ * Configures the cluster to use only one node. This is useful
++ * if you want to query the system.local and system.peers table
++ * on one system, to get details about the logical ring
++ *
++ * @param[in] cluster
++ * @param[in] contactpoint the node to contact 
++ * @return CASS_OK
++ */
++CASS_EXPORT CassError 
++cass_cluster_set_load_balance_single(CassCluster* cluster,
++                                       const char* contactpoint);
++/**
+  * Configures the cluster to use Token-aware request routing, or not.
+  *
+  * Default is cass_true (enabled).
+diff --git a/src/cluster.cpp b/src/cluster.cpp
+index 16b49db..04c560e 100644
+--- a/src/cluster.cpp
++++ b/src/cluster.cpp
+@@ -19,6 +19,7 @@
+ #include "common.hpp"
+ #include "dc_aware_policy.hpp"
+ #include "round_robin_policy.hpp"
++#include "single_node_policy.hpp"
+ #include "types.hpp"
+ 
+ #include <sstream>
+@@ -246,6 +247,13 @@ CassError cass_cluster_set_load_balance_dc_aware(CassCluster* cluster,
+   return CASS_OK;
+ }
+ 
++CassError cass_cluster_set_load_balance_single(CassCluster* cluster,
++                                                 const char* contactpoint) {
++   cluster->config().set_load_balancing_policy(new cass::CqlSingleNodeLoadbalancingPolicy(contactpoint));
++   return CASS_OK;
++}
++
++
+ void cass_cluster_set_token_aware_routing(CassCluster* cluster,
+                                           cass_bool_t enabled) {
+   cluster->config().set_token_aware_routing(enabled == cass_true);
+diff --git a/src/single_node_policy.hpp b/src/single_node_policy.hpp
+new file mode 100644
+index 0000000..e8c29ab
+--- /dev/null
++++ b/src/single_node_policy.hpp
+@@ -0,0 +1,97 @@
++/*
++  Copyright 2014 DataStax
++
++  Licensed under the Apache License, Version 2.0 (the "License");
++  you may not use this file except in compliance with the License.
++  You may obtain a copy of the License at
++
++  http://www.apache.org/licenses/LICENSE-2.0
++
++  Unless required by applicable law or agreed to in writing, software
++  distributed under the License is distributed on an "AS IS" BASIS,
++  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++  See the License for the specific language governing permissions and
++  limitations under the License.
++*/
++
++#ifndef __CASS_SINGLE_NODE_INCLUDED__
++#define __CASS_SINGLE_NODE_INCLUDED__
++
++#include "cassandra.h"
++#include "copy_on_write_ptr.hpp"
++#include "load_balancing.hpp"
++#include "host.hpp"
++
++#include <algorithm>
++
++namespace cass {
++
++class CqlSingleNodeLoadbalancingPolicy : public LoadBalancingPolicy {
++public:
++  CqlSingleNodeLoadbalancingPolicy(const std::string& hostname)
++    : contactpoint_(hostname)
++    , hosts_(new HostVec) {}
++
++  virtual void init(const HostMap& hosts) {
++    
++    for (HostMap::const_iterator it = hosts.begin(),
++         end = hosts.end(); it != end; ++it) {
++      std::string address_str = it->first.to_string();
++      
++      if(address_str == contactpoint_) {
++          hosts_->push_back(it->second);
++      }
++    }
++  }
++
++  virtual CassHostDistance distance(const SharedRefPtr<Host>& host) {
++    return CASS_HOST_DISTANCE_LOCAL;
++  }
++
++  virtual QueryPlan* new_query_plan(const std::string& connected_keyspace,
++                                    const Request* request,
++                                    const TokenMap& token_map) {
++    return new SingleNodeQueryPlan(hosts_);
++  }
++
++  virtual void on_add(const SharedRefPtr<Host>& host) {
++  }
++
++  virtual void on_remove(const SharedRefPtr<Host>& host) {
++  }
++
++  virtual void on_up(const SharedRefPtr<Host>& host) {
++  }
++
++  virtual void on_down(const SharedRefPtr<Host>& host) {
++  }
++
++  virtual LoadBalancingPolicy* new_instance() { return new CqlSingleNodeLoadbalancingPolicy(contactpoint_); }
++
++private:
++  std::string contactpoint_;
++  
++  class SingleNodeQueryPlan : public QueryPlan {
++  public:
++    SingleNodeQueryPlan(const CopyOnWriteHostVec& hosts)
++      : hosts_(hosts) {}
++
++    SharedRefPtr<Host> compute_next() {
++      const SharedRefPtr<Host>& host((*hosts_)[0]);  
++      return host;
++    }
++
++  private:
++    const CopyOnWriteHostVec hosts_;
++  };
++
++  CopyOnWriteHostVec hosts_;
++  std::set<Address> down_addresses_;
++
++private:
++  DISALLOW_COPY_AND_ASSIGN(CqlSingleNodeLoadbalancingPolicy);
++};
++
++} // namespace cass
++
++#endif
+-- 
+1.9.1
+
