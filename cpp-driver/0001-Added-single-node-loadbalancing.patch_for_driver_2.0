@@ -1,20 +1,20 @@
-From 1de191bc8596fdf73700245dd8b72f930d02f666 Mon Sep 17 00:00:00 2001
+From df2db6b5f03da10881e7a4f1af172fef332c85ad Mon Sep 17 00:00:00 2001
 From: Jan Nidzwetzki <knidzwetzki@gmx.de>
-Date: Tue, 11 Aug 2015 21:27:29 +0200
-Subject: [PATCH] Added single node loadbalancing
+Date: Wed, 13 May 2015 20:06:58 +0200
+Subject: [PATCH] Added single node load balancing policy
 
 ---
- include/cassandra.h        | 13 ++++++
+ include/cassandra.h        | 13 +++++++
  src/cluster.cpp            |  7 ++++
- src/single_node_policy.hpp | 98 ++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 118 insertions(+)
+ src/single_node_policy.hpp | 97 ++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 117 insertions(+)
  create mode 100644 src/single_node_policy.hpp
 
 diff --git a/include/cassandra.h b/include/cassandra.h
-index 09502e4..3a8c0a5 100644
+index 9c75d1c..d596e07 100644
 --- a/include/cassandra.h
 +++ b/include/cassandra.h
-@@ -783,6 +783,19 @@ CASS_EXPORT CassError
+@@ -696,6 +696,19 @@ CASS_EXPORT CassError
  cass_cluster_set_queue_size_io(CassCluster* cluster,
                                 unsigned queue_size);
  
@@ -32,22 +32,22 @@ index 09502e4..3a8c0a5 100644
 +                                       const char* contactpoint);
 +
  /**
-  * Sets the size of the fixed size queue that stores
+  * Sets the size of the the fixed size queue that stores
   * events.
 diff --git a/src/cluster.cpp b/src/cluster.cpp
-index a89f177..639a40f 100644
+index f1b23f0..331f917 100644
 --- a/src/cluster.cpp
 +++ b/src/cluster.cpp
-@@ -19,6 +19,7 @@
+@@ -20,6 +20,7 @@
  #include "dc_aware_policy.hpp"
  #include "logger.hpp"
  #include "round_robin_policy.hpp"
 +#include "single_node_policy.hpp"
- #include "external_types.hpp"
- #include "utils.hpp"
+ #include "types.hpp"
  
-@@ -259,6 +260,12 @@ CassError cass_cluster_set_load_balance_dc_aware_n(CassCluster* cluster,
-   return CASS_OK;
+ #include <sstream>
+@@ -244,6 +245,12 @@ CassError cass_cluster_set_load_balance_dc_aware(CassCluster* cluster,
+                                                   allow_remote_dcs_for_local_cl);
  }
  
 +CassError cass_cluster_set_load_balance_single(CassCluster* cluster,
@@ -56,15 +56,15 @@ index a89f177..639a40f 100644
 +   return CASS_OK;
 +}
 +
- void cass_cluster_set_token_aware_routing(CassCluster* cluster,
-                                           cass_bool_t enabled) {
-   cluster->config().set_token_aware_routing(enabled == cass_true);
+ CassError cass_cluster_set_load_balance_dc_aware_n(CassCluster* cluster,
+                                                  const char* local_dc,
+                                                  size_t local_dc_length,
 diff --git a/src/single_node_policy.hpp b/src/single_node_policy.hpp
 new file mode 100644
-index 0000000..9d22009
+index 0000000..2e6bc23
 --- /dev/null
 +++ b/src/single_node_policy.hpp
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,97 @@
 +/*
 +  Copyright 2014 DataStax
 +
@@ -117,8 +117,7 @@ index 0000000..9d22009
 +
 +  virtual QueryPlan* new_query_plan(const std::string& connected_keyspace,
 +                                    const Request* request,
-+                                    const TokenMap& token_map,
-+                                    Request::EncodingCache* cache) {
++                                    const TokenMap& token_map) {
 +    return new SingleNodeQueryPlan(hosts_);
 +  }
 +
