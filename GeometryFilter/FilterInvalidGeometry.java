@@ -34,6 +34,9 @@ public class FilterInvalidGeometry {
 		final BufferedReader fileReader = new BufferedReader(new FileReader(inputFile));
 		final BufferedWriter output = new BufferedWriter(new FileWriter(outputFile));
 		
+		int forwardedLines = 0;
+		int rejectedLines = 0;
+		
 		String line = null;
 		while((line = fileReader.readLine()) != null) {
 			final String[] fields = line.split("\t");
@@ -48,13 +51,17 @@ public class FilterInvalidGeometry {
 					
 					output.write(line);
 					output.write("\n");
+					forwardedLines++;
 				} catch(Exception e) {
 					System.err.println("Exception: Unable to parse: " + fields[0]);
+					rejectedLines++;
 				}
 			}
 		}
 		
 		fileReader.close();
 		output.close();
+		
+		System.out.println("Forwarded lines: " + forwardedLines + " / Rejected lines: " + rejectedLines);
 	}
 }
