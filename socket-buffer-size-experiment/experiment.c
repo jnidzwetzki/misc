@@ -92,7 +92,7 @@ void runExperiment(int bufferSize, char *hostChar, char *portChar) {
 
 	gettimeofday(&startTime, NULL);
 
-	long sendBytes = 0;
+	unsigned long long sendBytes = 0;
 	int ret = 0;
 	while(sendBytes < BYTES_TO_TRANSFER) {
 		
@@ -112,11 +112,13 @@ void runExperiment(int bufferSize, char *hostChar, char *portChar) {
 		sendBytes += bufferSize;
 	} 
 
+	// Flush socket
+	shutdown(fd, 2);
+	
 	gettimeofday(&stopTime, NULL);	
 	long diff = ((stopTime.tv_sec - startTime.tv_sec) * 1000000L 
             + stopTime.tv_usec) - startTime.tv_usec;
-	printf("Time for transfer data: %lu\n", diff);   
-	shutdown(fd, 2);
+	printf("Time for transfer %llu bytes of data: %lu\n", sendBytes, diff);   
 
 	free(buffer);
 	buffer = NULL;
