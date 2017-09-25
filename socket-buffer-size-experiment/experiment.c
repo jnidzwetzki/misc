@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
 	for (int i = 0; i < elements; i++) {
 		int bufferSize = experimentBytes[i];
 		runExperiment(bufferSize, argv[1], argv[2]);
+		sleep(20);
 	}
 	
 	return EXIT_SUCCESS;
@@ -94,11 +95,13 @@ void runExperiment(int bufferSize, char *hostChar, char *portChar) {
 
 	unsigned long long sendBytes = 0;
 	int ret = 0;
+	long syscalls = 0;
 	while(sendBytes < BYTES_TO_TRANSFER) {
 		
 		for (int n = 0; n < bufferSize; ) {
 			ret = write(fd, (char *)buffer + n, bufferSize - n);
-			
+			syscalls++;
+
 			if (ret < 0) { 
                 		if (errno == EINTR || errno == EAGAIN) {
                    			continue;
@@ -114,11 +117,19 @@ void runExperiment(int bufferSize, char *hostChar, char *portChar) {
 
 	// Flush socket
 	shutdown(fd, 2);
-	
+
 	gettimeofday(&stopTime, NULL);	
 	long diff = ((stopTime.tv_sec - startTime.tv_sec) * 1000000L 
             + stopTime.tv_usec) - startTime.tv_usec;
 	printf("Time for transfer %llu bytes of data: %lu\n", sendBytes, diff);   
+	
+	printf("Elapsed ms %lu (syscalls %lu)\n", stopTime.tv_usec - startTime.tv_usec, syscalls); 
+
+/*
+	double elapsedTime = (stopTime.tv_sec -  startTime.tv_sec) * 1000.0;      // sec to ms
+    	elapsedTime += (stopTime.tv_usec -  startTime.tv_usec) / 1000.0;   // us to ms
+    	printf("Elapsed %f\n", elapsedTime);
+*/
 
 	free(buffer);
 	buffer = NULL;
